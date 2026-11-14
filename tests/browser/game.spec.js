@@ -6,72 +6,48 @@ import { join, extname } from 'node:path';
 import { unzipSync } from 'fflate';
 import { packageGame } from '../../scripts/package-game.mjs';
 
-test('production build loads, collects a spark, and restarts', async ({ page }) => {
+test('buy, renovate, earn, sell, and restart', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  const failures = [];
-  page.on('response', response => { if (response.status() >= 400) failures.push(response.url()); });
   await page.goto('/');
-  await expect(page.locator('canvas')).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Sparks: 0 / 8');
-  // Movement should drive the real production game, without test-only hooks.
-  await page.keyboard.down('ArrowRight');
-  await expect(page.getByRole('status')).toHaveText('Sparks: 1 / 8');
-  await page.keyboard.up('ArrowRight');
+  await expect(page.locator('#cash')).toHaveText('$60,000');
+  await page.getByRole('button', { name: 'Buy & renovate' }).click();
+  await expect(page.getByRole('status')).toContainText('purchased');
+  await expect(page.locator('.holding')).toContainText('Renovating');
+  await expect(page.locator('.holding button')).toBeDisabled();
+  await page.keyboard.press('n');
+  await expect(page.locator('.holding')).toContainText('Leased');
+  const before = Number((await page.locator('#cash').textContent()).replace(/[^0-9]/g, ''));
+  await page.getByRole('button', { name: 'Next month' }).click();
+  const after = Number((await page.locator('#cash').textContent()).replace(/[^0-9]/g, ''));
+  expect(after).toBeGreaterThan(before);
+  await page.locator('.holding button').click();
+  await expect(page.locator('.holding')).toHaveCount(0);
+  await expect(page.getByRole('status')).toContainText('Sold');
   await page.getByRole('button', { name: 'Restart game' }).click();
-  await expect(page.getByRole('status')).toHaveText('Sparks: 0 / 8');
+  await expect(page.locator('#cash')).toHaveText('$60,000');
   expect(errors).toEqual([]);
-  expect(failures).toEqual([]);
 });
 
-test('pointer controls work at phone dimensions', async ({ page }) => {
+test('phone deal filtering and buying work without overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  const canvas = page.locator('canvas');
-  await expect(canvas).toBeVisible();
-  const box = await canvas.boundingBox();
-  // The first spark sits at (246, 104) in the game's 400 × 225 pixel world.
-  await page.mouse.move(box.x + box.width * 246 / 400, box.y + box.height * 104 / 225);
-  await page.mouse.down();
-  await expect(page.getByRole('status')).toHaveText('Sparks: 1 / 8');
-  await page.mouse.up();
+  await page.getByRole('button', { name: 'Foreclosure', exact: true }).click();
+  await expect(page.locator('.card')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Analyze Juniper Bungalow' }).click();
+  await expect(page.locator('.analysis')).toContainText('Juniper Bungalow');
+  await page.getByRole('button', { name: 'Buy & renovate' }).click();
+  await expect(page.locator('.holding')).toContainText('Juniper Bungalow');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('Three.js renders in WebGL 2 and its camera, pause, pixel, and reset controls work', async ({ page }) => {
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
+test('month limit ends play and restart reopens it', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('link', { name: 'Three.js 3D demo' }).click();
-  const scene = page.locator('canvas[aria-label="Interactive 3D canvas"]');
-  await expect(scene).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('3D demo · animation on');
-  expect(await scene.evaluate(element => {
-    const gl = element.getContext('webgl2');
-    return gl !== null && !gl.isContextLost();
-  })).toBe(true);
-  // The pixel look draws a small picture and scales it up; the smooth look draws every pixel.
-  const pixelWidth = await scene.evaluate(element => element.width);
-  await page.getByRole('button', { name: 'Smooth look' }).click();
-  await expect.poll(() => scene.evaluate(element => element.width)).toBeGreaterThan(pixelWidth);
-  await page.getByRole('button', { name: 'Pixel look' }).click();
-  await expect.poll(() => scene.evaluate(element => element.width)).toBe(pixelWidth);
-  await page.getByRole('button', { name: 'Pause animation' }).click();
-  await expect(page.getByRole('status')).toHaveText('3D demo · animation off');
-  const originalView = (await scene.screenshot()).toString('base64');
-  await scene.focus();
-  await page.keyboard.press('ArrowRight');
-  await expect.poll(async () => (await scene.screenshot()).toString('base64')).not.toBe(originalView);
-  await page.setViewportSize({ width: 390, height: 844 });
-  const phoneView = (await scene.screenshot()).toString('base64');
-  const box = await scene.boundingBox();
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2, { steps: 8 });
-  await page.mouse.up();
-  await expect.poll(async () => (await scene.screenshot()).toString('base64')).not.toBe(phoneView);
-  await page.getByRole('button', { name: 'Reset view' }).click();
-  await expect(page.getByRole('status')).toHaveText('3D demo · animation on');
-  expect(errors).toEqual([]);
+  for (let i = 0; i < 35; i++) await page.getByRole('button', { name: 'Next month' }).click();
+  await expect(page.getByRole('status')).toContainText('Challenge complete');
+  await expect(page.getByRole('button', { name: 'Next month' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Restart game' }).click();
+  await expect(page.getByRole('button', { name: 'Next month' })).toBeEnabled();
 });
 
 test('the actual submission ZIP runs under a subdirectory inside an iframe', async ({ page }) => {
@@ -95,18 +71,11 @@ test('the actual submission ZIP runs under a subdirectory inside an iframe', asy
   try {
     await page.goto(`http://127.0.0.1:${port}/`);
     const frame = page.frameLocator('iframe[title="Submitted game"]');
-    await expect(frame.locator('canvas')).toBeVisible();
-    await expect(frame.getByRole('status')).toHaveText('Sparks: 0 / 8');
-    await frame.locator('canvas').click();
-    await page.keyboard.down('ArrowRight');
-    await expect(frame.getByRole('status')).toHaveText('Sparks: 1 / 8');
-    await page.keyboard.up('ArrowRight');
-    // The same uploaded ZIP also includes the Three.js demo, with relative chunks.
-    await frame.getByRole('link', { name: 'Three.js 3D demo' }).click();
-    await expect(frame.locator('canvas[aria-label="Interactive 3D canvas"]')).toBeVisible();
-    await expect(frame.getByRole('status')).toHaveText('3D demo · animation on');
-    await frame.getByRole('button', { name: 'Pause animation' }).click();
-    await expect(frame.getByRole('status')).toHaveText('3D demo · animation off');
+    await expect(frame.getByRole('heading', { name: 'Find your next opportunity.' })).toBeVisible();
+    await frame.getByRole('button', { name: 'Buy & renovate' }).click();
+    await expect(frame.getByRole('status')).toContainText('purchased');
+    await frame.getByRole('button', { name: 'Next month' }).click();
+    await expect(frame.locator('.holding')).toContainText('Leased');
   } finally {
     await page.goto('about:blank');
     await new Promise(resolve => server.close(resolve));
