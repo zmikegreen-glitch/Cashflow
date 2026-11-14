@@ -1,0 +1,52 @@
+name: Deploy participant guide
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - event/event.json
+      - scripts/build-hub.mjs
+      - scripts/event-config.mjs
+      - docs/beginners.md
+      - showcase/**
+      - .github/workflows/deploy-guide.yml
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+concurrency:
+  group: participant-guide
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/build-hub.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-hub
+      - name: Wait for Pages artifact visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          GUIDE_RUN_ID: ${{ github.run_id }}
+        run: |
+          for attempt in {1..12}; do
+            count=$(gh api "repos/$GH_REPO/actions/runs/$GUIDE_RUN_ID/artifacts" \
+              --jq '[.artifacts[] | select(.name == "github-pages" and .expired == false)] | length')
+            if [ "$count" -gt 0 ]; then exit 0; fi
+            sleep 5
+          done
+          echo 'Pages artifact was not visible within one minute.' >&2
+          exit 1
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -1,0 +1,29 @@
+{
+  "name": "vibeCDA · game studio",
+  "remoteUser": "node",
+  "forwardPorts": [
+    5173
+  ],
+  "portsAttributes": {
+    "5173": {
+      "label": "Your game",
+      "onAutoForward": "openBrowser",
+      "visibility": "private"
+    }
+  },
+  "onCreateCommand": "bash .devcontainer/configure-shell.sh && node scripts/bootstrap.mjs",
+  "postAttachCommand": "cat docs/welcome.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.autoSave": "afterDelay"
+      }
+    }
+  },
+  "image": "ghcr.io/vibecda/vibecda-dev:92b512feb4a4339187218f2cc0d29f833ad3e3e8",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1.1.0": {}
+  }
+}

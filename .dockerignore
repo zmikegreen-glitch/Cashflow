@@ -1,0 +1,13 @@
+.git
+node_modules
+dist
+dist-hub
+artifacts
+test-results
+playwright-report
+.env*
+organizer/private
+.internal
+.agents
+.codex
+.aws
